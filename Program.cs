@@ -39,6 +39,18 @@ internal static class Program
         "permitir", "aceitar", "sim", "confirmar", "permissao", "permissão"
     };
 
+    private static readonly string[] CommandExecStrongWords =
+    {
+        "run command", "execute command", "command execution",
+        "executar comando", "execucao de comando", "execução de comando"
+    };
+
+    private static readonly string[] CommandExecWords =
+    {
+        "run", "execute", "command", "terminal", "shell", "powershell", "bash", "cmd",
+        "executar", "execucao", "execução", "comando"
+    };
+
     private static readonly string[] NextStepWords =
     {
         "next step", "next steps", "next-step",
@@ -206,15 +218,24 @@ internal static class Program
         int codexScore = codexHits > 0 ? 4 + codexHits : 0;
 
         int approvalScore = (3 * CountContains(normalized, ApprovalStrongWords)) + CountContains(normalized, ApprovalWords);
+        int commandExecScore = (3 * CountContains(normalized, CommandExecStrongWords)) + CountContains(normalized, CommandExecWords);
         int nextScore = (2 * CountContains(normalized, NextStepWords)) + CountContains(normalized, ContinueSuggestionWords);
 
         bool looksLikePrompt = normalized.Contains("allow") || normalized.Contains("permitir") || normalized.Contains("accept") || normalized.Contains("aceitar");
+        bool looksLikeCommandExec = normalized.Contains("terminal") || normalized.Contains("powershell") || normalized.Contains("bash") || normalized.Contains("comando");
         bool looksLikeSuggestion = normalized.Contains("next") || normalized.Contains("proxim") || normalized.Contains("seguir") || normalized.Contains("continu");
 
         if (approvalScore > 0)
         {
             approvalScore += looksLikePrompt ? 1 : 0;
             approvalScore += enhanced ? 1 : 0;
+        }
+
+        if (commandExecScore > 0)
+        {
+            commandExecScore += looksLikeCommandExec ? 2 : 0;
+            commandExecScore += looksLikePrompt ? 1 : 0;
+            commandExecScore += enhanced ? 1 : 0;
         }
 
         if (nextScore > 0)
@@ -225,7 +246,7 @@ internal static class Program
 
         if (codexScore == 0)
         {
-            if (approvalScore >= 6)
+            if (Math.Max(approvalScore, commandExecScore) >= 6)
             {
                 codexScore = 1;
             }
@@ -236,13 +257,16 @@ internal static class Program
         }
 
         int totalApproval = codexScore + approvalScore;
+        int totalCommandExec = codexScore + commandExecScore;
         int totalNext = codexScore + nextScore;
 
-        if (totalApproval >= 7 && totalApproval >= totalNext)
+        int bestApprovalLike = Math.Max(totalApproval, totalCommandExec);
+
+        if (bestApprovalLike >= 7 && bestApprovalLike >= totalNext)
         {
             return new DetectionResult(
                 ScreenAction.AcceptApproval,
-                totalApproval,
+                bestApprovalLike,
                 source,
                 BuildSnippet(normalized));
         }
@@ -256,7 +280,7 @@ internal static class Program
                 BuildSnippet(normalized));
         }
 
-        return new DetectionResult(ScreenAction.None, Math.Max(totalApproval, totalNext), source, BuildSnippet(normalized));
+        return new DetectionResult(ScreenAction.None, Math.Max(bestApprovalLike, totalNext), source, BuildSnippet(normalized));
     }
 
     private static bool RegisterAndCheckConfirmation(ScreenAction action)
